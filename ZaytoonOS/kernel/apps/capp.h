@@ -11,6 +11,7 @@ typedef struct capp_context {
     const char *const *argv;
     void (*write)(const char *message);
     void (*writeln)(const char *message);
+    void (*write_char)(char character);
     u64  (*uptime_ticks)(void);
     char (*readchar)(void);
 } capp_context_t;

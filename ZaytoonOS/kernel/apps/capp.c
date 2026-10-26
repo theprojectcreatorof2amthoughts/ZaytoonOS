@@ -9,17 +9,18 @@
 static int sysinfo_main(const capp_context_t *ctx);
 static int hello_main(const capp_context_t *ctx);
 static int ticks_main(const capp_context_t *ctx);
-static int commandprompt_main(const capp_context_t *ctx);
+extern int shell_app_main(const capp_context_t *ctx);
 
 static const capp_image_t native_capps[] = {
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "hello.capp",         "print a greeting",                     hello_main         },
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "sysinfo.capp",       "kernel and runtime information",       sysinfo_main       },
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "ticks.capp",         "scheduler uptime tick counter",        ticks_main         },
-    { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "commandprompt.capp", "interactive enhanced command prompt",  commandprompt_main },
+    { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "shell.capp",         "interactive command-line shell",          shell_app_main     },
 };
 
 static void capp_write(const char *msg)   { console_write(msg); }
 static void capp_writeln(const char *msg) { console_write(msg); console_write("\n"); }
+static void capp_write_char(char c)       { console_write_char(c); }
 static u64  capp_ticks(void)              { return sched_ticks(); }
 
 static const char *basename(const char *path)
@@ -154,6 +155,7 @@ int capp_exec(const char *path, int argc, const char *const *argv)
         .argv         = argv,
         .write        = capp_write,
         .writeln      = capp_writeln,
+        .write_char   = capp_write_char,
         .uptime_ticks = capp_ticks,
         .readchar     = keyboard_getchar,
     };
@@ -208,91 +210,4 @@ static int ticks_main(const capp_context_t *ctx)
     ctx->write(buf);
     ctx->writeln(" ticks");
     return 0;
-}
-
-/* ─── commandprompt.capp ─────────────────────────────────────────────────
-   An enhanced interactive sub-prompt with its own command set.
-   Type  EXIT  or  QUIT  to return to the parent shell.
-──────────────────────────────────────────────────────────────────────── */
-static int commandprompt_main(const capp_context_t *ctx)
-{
-#define CP_LINE 128
-    char line[CP_LINE];
-    u32 pos = 0;
-
-    ctx->writeln("");
-    ctx->writeln("╔══════════════════════════════════════════╗");
-    ctx->writeln("║   ZaytoonOS Enhanced Command Prompt      ║");
-    ctx->writeln("║   Type HELP for commands, EXIT to leave  ║");
-    ctx->writeln("╚══════════════════════════════════════════╝");
-    ctx->writeln("");
-
-    for (;;) {
-        ctx->write("CMD> ");
-        pos = 0;
-
-        for (;;) {
-            char c = ctx->readchar();
-
-            if (c == '\n' || c == '\r') {
-                line[pos] = '\0';
-                ctx->write("\n");
-                break;
-            } else if (c == '\b') {
-                if (pos > 0) {
-                    pos--;
-                    ctx->write("\b \b");
-                }
-            } else if ((unsigned char)c >= 32 && pos < CP_LINE - 1) {
-                char ch[2] = {c, 0};
-                line[pos++] = c;
-                ctx->write(ch);
-            }
-        }
-
-        if (pos == 0) continue;
-
-        if (shell_streq_ci(line, "EXIT") || shell_streq_ci(line, "QUIT")) {
-            ctx->writeln("Returning to shell.");
-            break;
-
-        } else if (shell_streq_ci(line, "HELP") || shell_streq_ci(line, "?")) {
-            ctx->writeln("  HELP / ?    this list");
-            ctx->writeln("  ABOUT       OS information");
-            ctx->writeln("  VER         kernel version string");
-            ctx->writeln("  UPTIME      scheduler tick counter");
-            ctx->writeln("  SYSINFO     detailed system report");
-            ctx->writeln("  APPS        list installed .capp programs");
-            ctx->writeln("  EXIT        return to parent shell");
-
-        } else if (shell_streq_ci(line, "ABOUT")) {
-            ctx->writeln("ZaytoonOS — minimalist x86 32-bit kernel");
-            ctx->writeln("Written in C, assembled with GAS, booted via GRUB2.");
-            ctx->writeln("Architecture: protected mode, flat segments, IDT, PIC.");
-
-        } else if (shell_streq_ci(line, "VER")) {
-            ctx->writeln("ZaytoonOS kernel v1.0  (x86 32-bit, multiboot2)");
-
-        } else if (shell_streq_ci(line, "UPTIME")) {
-            char buf[64];
-            shell_format_u64(buf, sizeof(buf), "uptime = ", ctx->uptime_ticks());
-            ctx->write(buf);
-            ctx->writeln(" ticks");
-
-        } else if (shell_streq_ci(line, "SYSINFO")) {
-            sysinfo_main(ctx);
-
-        } else if (shell_streq_ci(line, "APPS")) {
-            ctx->writeln("Installed .capp programs:");
-            capp_list(ctx->writeln);
-
-        } else {
-            ctx->write("Unknown: ");
-            ctx->writeln(line);
-            ctx->writeln("Type HELP for available commands.");
-        }
-    }
-
-    return 0;
-#undef CP_LINE
 }

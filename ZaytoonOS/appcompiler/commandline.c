@@ -15,8 +15,8 @@ int main(void)
     capp_print("Uptime when launched: ");
     capp_print_ticks();
     capp_println("─────────────────────────────────────────");
-    capp_println("Try  commandprompt.capp  for an interactive");
-    capp_println("enhanced command prompt with more features.");
+    capp_println("The interactive C shell is shell.capp.");
+    capp_println("Run it directly from the ZaytoonOS prompt.");
     capp_exit(0);
     capp_end();
     return 0;

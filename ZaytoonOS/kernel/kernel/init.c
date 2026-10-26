@@ -7,8 +7,16 @@
 #include "kernel/irq/irq.h"
 #include "kernel/arch/arch.h"
 #include "kernel/apps/capp.h"
+#include "kernel/drivers/keyboard.h"
 #include "kernel/fs/vfs.h"
-#include "kernel/shell/commandline.h"
+
+static void shell_app_task(void)
+{
+    const char *argv[] = { "shell.capp" };
+    if (capp_exec("shell.capp", 1, argv) != 0) {
+        printk("[kernel] failed to launch shell.capp");
+    }
+}
 
 void kernel_init(void)
 {
@@ -17,8 +25,8 @@ void kernel_init(void)
     task_init();
     capp_init();
     vfs_init();
-    shell_init();
-    task_add(shell_run, "shell");
+    keyboard_init();
+    task_add(shell_app_task, "shell.capp");
     task_add(kernel_idle, "idle");
     sched_init();
     register_irq_handler(32, schedule);
