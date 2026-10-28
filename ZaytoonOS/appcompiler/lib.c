@@ -96,6 +96,16 @@ void capp_print_ticks(void)
     emit_record(CAPP_OP_TICKS, NULL, 0);
 }
 
+void capp_number_guess(void)
+{
+    emit_record(CAPP_OP_NUMBER_GUESS, NULL, 0);
+}
+
+void capp_flight_sim(void)
+{
+    emit_record(CAPP_OP_FLIGHT_SIM, NULL, 0);
+}
+
 void capp_exit(int code)
 {
     emit_record(CAPP_OP_EXIT, &code, sizeof(code));

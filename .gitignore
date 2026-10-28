@@ -1,3 +1,9 @@
 *.o
 
 APPCOMPILEFOLDER/
+/ZaytoonOS/build/
+/ZaytoonOS/krnl.elf
+/ZaytoonOS/zaytoonos.iso
+/ZaytoonOS/zaytoonos-data.img
+/ZaytoonOS/zaytoonos-hdd.img
+/ZaytoonOS/appcompiler/*.builder

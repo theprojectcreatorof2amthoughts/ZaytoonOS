@@ -40,6 +40,7 @@ void capp_init(void);
 bool capp_exists(const char *path);
 void capp_list(void (*writer)(const char *line));
 int  capp_exec(const char *path, int argc, const char *const *argv);
+int  capp_install(const char *path);
 u32  capp_count(void);
 
 #endif

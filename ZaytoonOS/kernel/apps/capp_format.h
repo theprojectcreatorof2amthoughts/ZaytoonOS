@@ -14,6 +14,8 @@ typedef enum capp_record_opcode {
     CAPP_OP_ARGS = 3,
     CAPP_OP_TICKS = 4,
     CAPP_OP_EXIT = 5,
+    CAPP_OP_NUMBER_GUESS = 6,
+    CAPP_OP_FLIGHT_SIM = 7,
 } capp_record_opcode_t;
 
 typedef struct capp_file_header {

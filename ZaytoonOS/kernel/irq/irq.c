@@ -11,7 +11,6 @@ void irq_init(void)
 
     pic_remap();
     pic_unmask(0);  /* Timer IRQ */
-    pic_unmask(1);  /* Keyboard IRQ */
 }
 
 void irq_disable(void)

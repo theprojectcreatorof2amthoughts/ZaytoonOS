@@ -1,32 +1,58 @@
 #include "kernel/drivers/keyboard.h"
 #include "kernel/arch/io.h"
+#include "kernel/kernel/printk.h"
+#include "kernel/types.h"
 
 #define COM1_BASE       0x3F8u
 #define COM1_DATA       (COM1_BASE + 0u)
-#define COM1_INTERRUPT (COM1_BASE + 1u)
-#define COM1_FIFO       (COM1_BASE + 2u)
-#define COM1_LINE       (COM1_BASE + 3u)
-#define COM1_MODEM      (COM1_BASE + 4u)
 #define COM1_STATUS     (COM1_BASE + 5u)
 
-#define UART_LCR_DLAB   0x80u
-#define UART_LCR_8N1    0x03u
-#define UART_FIFO_INIT  0xC7u
 #define UART_LSR_DATA   0x01u
-#define UART_LSR_THRE   0x20u  // Transmitter Holding Register Empty flag
+#define UART_LSR_THRE   0x20u
+#define PS2_DATA        0x60u
+#define PS2_STATUS      0x64u
+
+static bool shift_pressed;
+static bool caps_lock;
+static bool extended_scancode;
+
+static const char scancode_map[128] = {
+    [0x02] = '1', [0x03] = '2', [0x04] = '3', [0x05] = '4',
+    [0x06] = '5', [0x07] = '6', [0x08] = '7', [0x09] = '8',
+    [0x0A] = '9', [0x0B] = '0', [0x0C] = '-', [0x0D] = '=',
+    [0x0E] = '\b', [0x0F] = '\t',
+    [0x10] = 'q', [0x11] = 'w', [0x12] = 'e', [0x13] = 'r',
+    [0x14] = 't', [0x15] = 'y', [0x16] = 'u', [0x17] = 'i',
+    [0x18] = 'o', [0x19] = 'p', [0x1A] = '[', [0x1B] = ']',
+    [0x1C] = '\n',
+    [0x1E] = 'a', [0x1F] = 's', [0x20] = 'd', [0x21] = 'f',
+    [0x22] = 'g', [0x23] = 'h', [0x24] = 'j', [0x25] = 'k',
+    [0x26] = 'l', [0x27] = ';', [0x28] = '\'', [0x29] = '`',
+    [0x2B] = '\\',
+    [0x2C] = 'z', [0x2D] = 'x', [0x2E] = 'c', [0x2F] = 'v',
+    [0x30] = 'b', [0x31] = 'n', [0x32] = 'm', [0x33] = ',',
+    [0x34] = '.', [0x35] = '/', [0x37] = '*', [0x39] = ' ',
+};
+
+static const char shifted_scancode_map[128] = {
+    [0x02] = '!', [0x03] = '@', [0x04] = '#', [0x05] = '$',
+    [0x06] = '%', [0x07] = '^', [0x08] = '&', [0x09] = '*',
+    [0x0A] = '(', [0x0B] = ')', [0x0C] = '_', [0x0D] = '+',
+    [0x1A] = '{', [0x1B] = '}', [0x27] = ':', [0x28] = '"',
+    [0x29] = '~', [0x2B] = '|', [0x33] = '<', [0x34] = '>',
+    [0x35] = '?',
+};
 
 static int serial_data_ready(void)
 {
     return (inb(COM1_STATUS) & UART_LSR_DATA) != 0;
 }
 
-/* Check if the serial port is clear to send data back to the screen */
 static int serial_transmit_ready(void)
 {
     return (inb(COM1_STATUS) & UART_LSR_THRE) != 0;
 }
 
-/* Transmit a character back to the console window (Crucial for Local Echo) */
 static void serial_put_char(char c)
 {
     while (!serial_transmit_ready()) {
@@ -35,41 +61,112 @@ static void serial_put_char(char c)
     outb(COM1_DATA, (uint8_t)c);
 }
 
+static bool ps2_wait_input_empty(void)
+{
+    for (u32 timeout = 0; timeout < 100000u; ++timeout) {
+        if ((inb(PS2_STATUS) & 0x02u) == 0) {
+            return true;
+        }
+        asm volatile("pause");
+    }
+    return false;
+}
+
+static bool ps2_wait_output_full(void)
+{
+    for (u32 timeout = 0; timeout < 100000u; ++timeout) {
+        if ((inb(PS2_STATUS) & 0x01u) != 0) {
+            return true;
+        }
+        asm volatile("pause");
+    }
+    return false;
+}
+
+static bool ps2_enable_keyboard(void)
+{
+    if (!ps2_wait_input_empty()) {
+        return false;
+    }
+    outb(PS2_STATUS, 0x20u);
+    if (!ps2_wait_output_full()) {
+        return false;
+    }
+    u8 controller_config = inb(PS2_DATA);
+    controller_config = (u8)(controller_config & (u8)~0x11u);
+
+    if (!ps2_wait_input_empty()) {
+        return false;
+    }
+    outb(PS2_STATUS, 0x60u);
+    if (!ps2_wait_input_empty()) {
+        return false;
+    }
+    outb(PS2_DATA, controller_config);
+    if (!ps2_wait_input_empty()) {
+        return false;
+    }
+    outb(PS2_STATUS, 0xAEu);
+    return ps2_wait_input_empty();
+}
+
+static int ps2_translate_scancode(u8 scancode)
+{
+    if (scancode == 0xE0u || scancode == 0xE1u) {
+        extended_scancode = true;
+        return -1;
+    }
+    if (extended_scancode) {
+        extended_scancode = false;
+        return -1;
+    }
+    if (scancode == 0x2Au || scancode == 0x36u) {
+        shift_pressed = true;
+        return -1;
+    }
+    if (scancode == 0xAAu || scancode == 0xB6u) {
+        shift_pressed = false;
+        return -1;
+    }
+    if (scancode == 0x3Au) {
+        caps_lock = !caps_lock;
+        return -1;
+    }
+    if (scancode & 0x80u) {
+        return -1;
+    }
+
+    char c = scancode_map[scancode];
+    if (c >= 'a' && c <= 'z') {
+        if (shift_pressed != caps_lock) {
+            c = (char)(c - ('a' - 'A'));
+        }
+    } else if (shift_pressed && shifted_scancode_map[scancode]) {
+        c = shifted_scancode_map[scancode];
+    }
+    return c ? (unsigned char)c : -1;
+}
+
 void keyboard_init(void)
 {
-    // 1. Disable hardware interrupts entirely during initial setup
-    outb(COM1_INTERRUPT, 0x00u);
-    
-    // 2. Turn on DLAB to configure the clock baud rate
-    outb(COM1_LINE, UART_LCR_DLAB);
-    
-    // 3. Set the baud rate divisor to 3 (38400 Baud)
-    outb(COM1_DATA, 0x03u);
-    outb(COM1_INTERRUPT, 0x00u);
-    
-    // 4. Turn off DLAB, lock mode to 8 bits, no parity, 1 stop bit (8N1)
-    outb(COM1_LINE, UART_LCR_8N1);
-    
-    // 5. Enable FIFO, clear both the receiver and transmitter queues
-    outb(COM1_FIFO, UART_FIFO_INIT);
-    
-    // 6. Set Auxiliary Output 2 (0x08) to allow hardware signals to flow 
-    // and assert RTS/DTR lines (0x01 | 0x02) -> 0x0B total.
-    outb(COM1_MODEM, 0x0Bu);
-    
-    // 7. CRUCIAL FOR v86: Flush any garbage boot bytes from the registers
-    // to clear the internal emulator latch before we start polling!
-    (void)inb(COM1_STATUS);
-    (void)inb(COM1_DATA);
+    shift_pressed = false;
+    caps_lock = false;
+    extended_scancode = false;
+
+    for (u32 count = 0; count < 32u && (inb(PS2_STATUS) & 0x01u); ++count) {
+        (void)inb(PS2_DATA);
+    }
+
+    if (!ps2_enable_keyboard()) {
+        printk("[keyboard] PS/2 controller unavailable; serial input remains enabled");
+        return;
+    }
 }
 
 
 char kernel_get_char(void)
 {
-    while (!serial_data_ready()) {
-        asm volatile("pause");
-    }
-    return (char)inb(COM1_DATA);
+    return keyboard_getchar();
 }
 
 void kernel_read_line(char *dest_buf, uint32_t max_len)
@@ -82,7 +179,7 @@ void kernel_read_line(char *dest_buf, uint32_t max_len)
     dest_buf[0] = '\0';
 
     for (;;) {
-        char c = kernel_get_char();
+        char c = keyboard_getchar();
         
         // Terminals send \r (Carriage Return) on Enter. Handle it and move to next line.
         if (c == '\n' || c == '\r') {
@@ -118,27 +215,17 @@ void kernel_read_line(char *dest_buf, uint32_t max_len)
 
 int keyboard_poll_char(void)
 {
-    if (!serial_data_ready()) {
-        return -1;
+    for (u32 count = 0; count < 16u && (inb(PS2_STATUS) & 0x01u); ++count) {
+        int c = ps2_translate_scancode(inb(PS2_DATA));
+        if (c >= 0) {
+            return c;
+        }
     }
 
-    char c = (char)inb(COM1_DATA);
-    
-    // Automatically perform local echo even for legacy applications calling the polling handler
-    if (c == '\r' || c == '\n') {
-        serial_put_char('\r');
-        serial_put_char('\n');
-        return '\n';
+    if (serial_data_ready()) {
+        return (unsigned char)inb(COM1_DATA);
     }
-    if ((unsigned char)c == 0x7Fu || c == '\b') {
-        serial_put_char('\b');
-        serial_put_char(' ');
-        serial_put_char('\b');
-        return '\b';
-    }
-    
-    serial_put_char(c); // Echo character back out
-    return (unsigned char)c;
+    return -1;
 }
 
 char keyboard_getchar(void)
