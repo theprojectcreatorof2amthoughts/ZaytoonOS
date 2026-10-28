@@ -53,7 +53,7 @@ static bool entry_name_valid(const store_entry_t *entry)
             break;
         }
     }
-    return terminated && entry->size > 0 && entry->size <= STORE_SLOT_BYTES;
+    return terminated && entry->size <= STORE_SLOT_BYTES;
 }
 
 bool disk_store_init(void)
@@ -118,18 +118,24 @@ const unsigned char *disk_store_read(const char *path, u32 *size_out)
     return NULL;
 }
 
-bool disk_store_install(const char *name, const unsigned char *data, u32 size)
+static bool file_name_valid(const char *name, u32 *length_out)
 {
-    if (!mounted || !name || !data || !size || size > STORE_SLOT_BYTES) return false;
+    if (!name || !*name) return false;
     u32 name_length = shell_strlen(name);
-    if (name_length == 0 || name_length >= CAPP_NAME_MAX) return false;
+    if (name_length >= CAPP_NAME_MAX || shell_streq_ci(name, ".") || shell_streq_ci(name, ".."))
+        return false;
+    for (u32 i = 0; i < name_length; ++i) {
+        if (name[i] == '/' || name[i] == '\\' || (u8)name[i] < 32u) return false;
+    }
+    if (length_out) *length_out = name_length;
+    return true;
+}
 
-    const capp_file_header_t *header = (const capp_file_header_t *)data;
-    if (size < sizeof(*header) || header->magic != CAPP_FILE_MAGIC ||
-        header->abi_version != CAPP_FILE_ABI_VERSION ||
-        header->header_size != sizeof(*header) ||
-        header->name[CAPP_NAME_MAX - 1u] != '\0' ||
-        !shell_streq_ci(name, header->name)) return false;
+bool disk_store_write_file(const char *name, const unsigned char *data, u32 size)
+{
+    u32 name_length;
+    if (!mounted || (!data && size) || size > STORE_SLOT_BYTES ||
+        !file_name_valid(name, &name_length)) return false;
 
     u32 slot = STORE_ENTRY_COUNT;
     for (u32 i = 0; i < STORE_ENTRY_COUNT; ++i) {
@@ -167,8 +173,19 @@ bool disk_store_install(const char *name, const unsigned char *data, u32 size)
         printk("[disk] directory update failed; app volume unmounted");
         return false;
     }
-    printk("[disk] installed %s (%u bytes)", name, size);
+    printk("[disk] saved %s (%u bytes)", name, size);
     return true;
+}
+
+bool disk_store_install(const char *name, const unsigned char *data, u32 size)
+{
+    if (!name || !data || size < sizeof(capp_file_header_t)) return false;
+    const capp_file_header_t *header = (const capp_file_header_t *)data;
+    if (header->magic != CAPP_FILE_MAGIC || header->abi_version != CAPP_FILE_ABI_VERSION ||
+        header->header_size != sizeof(*header) ||
+        header->name[CAPP_NAME_MAX - 1u] != '\0' ||
+        !shell_streq_ci(name, header->name)) return false;
+    return disk_store_write_file(name, data, size);
 }
 
 void disk_store_list(void (*writer)(const char *line))

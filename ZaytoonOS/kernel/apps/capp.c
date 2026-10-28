@@ -10,12 +10,14 @@
 static int sysinfo_main(const capp_context_t *ctx);
 static int hello_main(const capp_context_t *ctx);
 static int ticks_main(const capp_context_t *ctx);
+extern int cappytxt_main(const capp_context_t *ctx);
 extern int shell_app_main(const capp_context_t *ctx);
 
 static const capp_image_t native_capps[] = {
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "hello.capp",         "print a greeting",                     hello_main         },
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "",       "kernel and runtime information",       sysinfo_main       },
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "ticks.capp",         "scheduler uptime tick counter",        ticks_main         },
+    { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "cappytxt.capp",      "text editor for HDD files",            cappytxt_main      },
     { CAPP_MAGIC, CAPP_ABI_VERSION, sizeof(capp_image_t), "shell.capp",         "interactive command-line shell",          shell_app_main     },
 };
 

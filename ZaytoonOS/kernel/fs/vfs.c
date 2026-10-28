@@ -46,6 +46,32 @@ bool vfs_exists(const char *path)
            shell_streq_ci(path, "HDD:/APPS") || capp_exists(path);
 }
 
+static const char *hdd_root_name(const char *path)
+{
+    if (!path || !shell_starts_with_ci(path, "HDD:/")) return NULL;
+    const char *name = path + 5;
+    if (!*name) return NULL;
+    for (const char *p = name; *p; ++p) {
+        if (*p == '/' || *p == '\\') return NULL;
+    }
+    return name;
+}
+
+const unsigned char *vfs_read_file(const char *path, u32 *size_out)
+{
+    if (size_out) *size_out = 0;
+    const char *name = hdd_root_name(path);
+    if (!name || shell_streq_ci(name, "APPS")) return NULL;
+    return disk_store_read(name, size_out);
+}
+
+bool vfs_write_file(const char *path, const unsigned char *data, u32 size)
+{
+    const char *name = hdd_root_name(path);
+    if (!name || shell_streq_ci(name, "APPS")) return false;
+    return disk_store_write_file(name, data, size);
+}
+
 static void write_root(void (*writer)(const char *line))
 {
     writer("<DIR> BIN");
@@ -61,6 +87,7 @@ static void write_bin(void (*writer)(const char *line))
 static void write_hdd_root(void (*writer)(const char *line))
 {
     writer("<DIR> APPS");
+    disk_store_list(writer);
 }
 
 void vfs_list_dir(const char *path, void (*writer)(const char *line))

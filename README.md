@@ -113,6 +113,19 @@ create a separate data disk manually, use
 `python3 ZaytoonOS/tools/create_data_disk.py <image-path>`; the tool refuses
 to overwrite an existing image.
 
+## cappytxt
+
+The native `cappytxt.capp` editor can create and edit text files on the
+persistent HDD app volume:
+
+    cappytxt.capp HDD:/notes.txt
+
+Type text one line at a time. `:w` saves, `:wq` saves and exits, `:q` exits
+without saving, and `:clear` empties the buffer. Files can use any filename
+extension; this is a text editor, not a binary editor. The current editor
+buffer is limited to 4096 bytes, and the HDD app volume has twelve 64 KiB
+file slots shared by apps and ordinary files.
+
 ## ZayFlight simulator
 
 `zayflight.capp` is a packaged interactive text flight simulator. Build from

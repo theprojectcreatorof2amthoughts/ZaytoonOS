@@ -58,6 +58,7 @@ static void cmd_help(const capp_context_t *ctx)
     sh_writeln(ctx, "  CD <path>      change directory");
     sh_writeln(ctx, "  ECHO <text>    print text");
     sh_writeln(ctx, "  TYPE <file>    show file contents");
+    sh_writeln(ctx, "  cappytxt       edit and save a text file on HDD");
     sh_writeln(ctx, "  MEM            memory & heap info");
     sh_writeln(ctx, "  PS             running tasks");
     sh_writeln(ctx, "  UPTIME         scheduler ticks");
@@ -71,6 +72,7 @@ static void cmd_help(const capp_context_t *ctx)
     sh_writeln(ctx, "  shell.capp");
     sh_writeln(ctx, "  number_guess.capp");
     sh_writeln(ctx, "  zayflight.capp");
+    sh_writeln(ctx, "  cappytxt.capp HDD:/notes.txt");
 }
 
 static void cmd_cls(const capp_context_t *ctx)
@@ -89,7 +91,14 @@ static void cmd_type(const capp_context_t *ctx, const char *path)
         sh_writeln(ctx, "HDD:/APPS stores apps installed on the persistent data disk.");
         sh_writeln(ctx, "Use INSTALL <name.capp>, then RUN HDD:/APPS/<name.capp>.");
     } else {
-        sh_writeln(ctx, "File not found.");
+        u32 size = 0;
+        const unsigned char *data = vfs_read_file(path, &size);
+        if (!data) {
+            sh_writeln(ctx, "File not found.");
+            return;
+        }
+        for (u32 i = 0; i < size; ++i) ctx->write_char((char)data[i]);
+        if (size && data[size - 1u] != '\n') sh_writeln(ctx, "");
     }
 }
 
@@ -98,7 +107,7 @@ static void exec_line(const capp_context_t *ctx, int argc, const char **argv)
     if (shell_streq_ci(argv[0], "HELP") || shell_streq_ci(argv[0], "?")) {
         cmd_help(ctx);
     } else if (shell_streq_ci(argv[0], "VER")) {
-        sh_writeln(ctx, "ZaytoonOS kernel v1.0 (x86 32-bit, GRUB2 multiboot2)");
+        sh_writeln(ctx, "ZaytoonOS kernel v1.2 (x86 32-bit, GRUB2 multiboot2)");
     } else if (shell_streq_ci(argv[0], "CLS") || shell_streq_ci(argv[0], "CLEAR")) {
         cmd_cls(ctx);
     } else if (shell_streq_ci(argv[0], "DIR") || shell_streq_ci(argv[0], "LS")) {
@@ -161,7 +170,7 @@ int shell_app_main(const capp_context_t *ctx)
     const char *argv[SHELL_MAX_ARGS];
 
     ctx->writeln("");
-    ctx->writeln("ZaytoonOS Command Processor v1.0 (.capp)");
+    ctx->writeln("ZaytoonOS Kernel v1.2");
     ctx->writeln("Type HELP for available commands.");
     ctx->writeln("");
 
