@@ -25,6 +25,7 @@ void kernel_init(void)
     task_init();
     capp_init();
     vfs_init();
+    register_irq_handler(33, keyboard_irq_handler);
     keyboard_init();
     task_add(shell_app_task, "shell.capp");
     task_add(kernel_idle, "idle");

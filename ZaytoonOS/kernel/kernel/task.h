@@ -28,6 +28,7 @@ void task_init(void);
 void task_add(void (*entry)(void), const char *name);
 void task_add_user(uint32_t entry, uint32_t stack, uint32_t *page_table, const char *name);
 void task_yield(void);
+void task_exit_current(void);
 void task_run(void);
 
 #endif // TASK_H

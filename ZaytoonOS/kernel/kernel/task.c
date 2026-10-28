@@ -15,6 +15,7 @@ static task_t *task_list;
 
 static void task_wrapper(void)
 {
+    asm volatile("sti" : : : "memory");
     if (current_task && current_task->entry) {
         current_task->entry();
     }
@@ -134,6 +135,18 @@ void task_yield(void)
     current_task = next;
     current_task->state = TASK_RUNNING;
     context_switch(&prev->context, &current_task->context);
+}
+
+void task_exit_current(void)
+{
+    if (current_task) {
+        current_task->state = TASK_STOPPED;
+        task_yield();
+    }
+
+    for (;;) {
+        asm volatile("sti; hlt" : : : "memory");
+    }
 }
 
 void task_run(void)

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 void keyboard_init(void);
+void keyboard_irq_handler(void);
 char kernel_get_char(void);
 void kernel_read_line(char *dest_buf, uint32_t max_len);
 

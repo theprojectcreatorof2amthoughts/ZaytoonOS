@@ -76,9 +76,12 @@ All of this is if you want to run ```qemu``` in Github CodeSpaces, YOU DO NOT HA
 ## Keyboard and `.capp` shell
 
 The keyboard driver handles PS/2 IRQ1 scancodes and buffers translated
-characters for the shell and applications. In headless QEMU runs, shell input
-is also read from COM1 so typing into the `make run` terminal works. The boot
-shell is the native C application `shell.capp`, implemented in
+characters for the shell and applications. Blocking reads halt until an
+interrupt arrives instead of busy-spinning. In headless QEMU runs, shell input
+is also read from COM1 so typing into the `make run` terminal works. The
+32-bit `int 0x80` interface uses i386-style `read`, `write`, and `exit`
+syscall numbers; `read` accepts standard input (file descriptor 0).
+The boot shell is the native C application `shell.capp`, implemented in
 [`ZaytoonOS/kernel/apps/shell.c`](./ZaytoonOS/kernel/apps/shell.c) and launched
 through the `.capp` runtime. Native C apps are compiled into the kernel and
 registered with that runtime; the appcompiler's packaged `.capp` files use the

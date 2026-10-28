@@ -1,6 +1,7 @@
 #include "kernel/drivers/keyboard.h"
 #include "kernel/arch/io.h"
 #include "kernel/kernel/printk.h"
+#include "kernel/irq/pic.h"
 #include "kernel/types.h"
 
 #define COM1_BASE       0x3F8u
@@ -11,10 +12,14 @@
 #define UART_LSR_THRE   0x20u
 #define PS2_DATA        0x60u
 #define PS2_STATUS      0x64u
+#define KEYBOARD_BUFFER_SIZE 128u
 
 static bool shift_pressed;
 static bool caps_lock;
 static bool extended_scancode;
+static volatile char keyboard_buffer[KEYBOARD_BUFFER_SIZE];
+static volatile u32 keyboard_buffer_head;
+static volatile u32 keyboard_buffer_tail;
 
 static const char scancode_map[128] = {
     [0x02] = '1', [0x03] = '2', [0x04] = '3', [0x05] = '4',
@@ -93,7 +98,7 @@ static bool ps2_enable_keyboard(void)
         return false;
     }
     u8 controller_config = inb(PS2_DATA);
-    controller_config = (u8)(controller_config & (u8)~0x11u);
+    controller_config = (u8)((controller_config & (u8)~0x10u) | 0x01u);
 
     if (!ps2_wait_input_empty()) {
         return false;
@@ -108,6 +113,42 @@ static bool ps2_enable_keyboard(void)
     }
     outb(PS2_STATUS, 0xAEu);
     return ps2_wait_input_empty();
+}
+
+static u32 keyboard_irq_save(void)
+{
+    u32 flags;
+    asm volatile("pushfl; popl %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static void keyboard_irq_restore(u32 flags)
+{
+    if (flags & 0x200u) {
+        asm volatile("sti" : : : "memory");
+    } else {
+        asm volatile("cli" : : : "memory");
+    }
+}
+
+static int keyboard_dequeue(void)
+{
+    if (keyboard_buffer_tail == keyboard_buffer_head) {
+        return -1;
+    }
+
+    char c = keyboard_buffer[keyboard_buffer_tail];
+    keyboard_buffer_tail = (keyboard_buffer_tail + 1u) % KEYBOARD_BUFFER_SIZE;
+    return (unsigned char)c;
+}
+
+static void keyboard_enqueue(char c)
+{
+    u32 next_head = (keyboard_buffer_head + 1u) % KEYBOARD_BUFFER_SIZE;
+    if (next_head != keyboard_buffer_tail) {
+        keyboard_buffer[keyboard_buffer_head] = c;
+        keyboard_buffer_head = next_head;
+    }
 }
 
 static int ps2_translate_scancode(u8 scancode)
@@ -152,6 +193,8 @@ void keyboard_init(void)
     shift_pressed = false;
     caps_lock = false;
     extended_scancode = false;
+    keyboard_buffer_head = 0;
+    keyboard_buffer_tail = 0;
 
     for (u32 count = 0; count < 32u && (inb(PS2_STATUS) & 0x01u); ++count) {
         (void)inb(PS2_DATA);
@@ -161,8 +204,24 @@ void keyboard_init(void)
         printk("[keyboard] PS/2 controller unavailable; serial input remains enabled");
         return;
     }
+    pic_unmask(1);
 }
 
+void keyboard_irq_handler(void)
+{
+    u8 status = inb(PS2_STATUS);
+    if ((status & 0x01u) == 0) {
+        return;
+    }
+
+    u8 scancode = inb(PS2_DATA);
+    if ((status & 0x20u) == 0) {
+        int c = ps2_translate_scancode(scancode);
+        if (c >= 0) {
+            keyboard_enqueue((char)c);
+        }
+    }
+}
 
 char kernel_get_char(void)
 {
@@ -215,11 +274,11 @@ void kernel_read_line(char *dest_buf, uint32_t max_len)
 
 int keyboard_poll_char(void)
 {
-    for (u32 count = 0; count < 16u && (inb(PS2_STATUS) & 0x01u); ++count) {
-        int c = ps2_translate_scancode(inb(PS2_DATA));
-        if (c >= 0) {
-            return c;
-        }
+    u32 flags = keyboard_irq_save();
+    int c = keyboard_dequeue();
+    keyboard_irq_restore(flags);
+    if (c >= 0) {
+        return c;
     }
 
     if (serial_data_ready()) {
@@ -230,9 +289,17 @@ int keyboard_poll_char(void)
 
 char keyboard_getchar(void)
 {
-    int c;
-    while ((c = keyboard_poll_char()) < 0) {
-        asm volatile("pause");
+    u32 flags = keyboard_irq_save();
+    for (;;) {
+        int c = keyboard_dequeue();
+        if (c < 0 && serial_data_ready()) {
+            c = (unsigned char)inb(COM1_DATA);
+        }
+        if (c >= 0) {
+            keyboard_irq_restore(flags);
+            return (char)c;
+        }
+
+        asm volatile("sti; hlt; cli" : : : "memory");
     }
-    return (char)c;
 }

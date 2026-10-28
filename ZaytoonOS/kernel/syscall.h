@@ -4,33 +4,26 @@
 #include "kernel/types.h"
 
 enum {
-    SYS_WRITE = 1,
-    SYS_EXIT = 60,
-    SYS_BRK = 12,
-    SYS_READ = 0,
+    SYS_EXIT = 1,
+    SYS_READ = 3,
+    SYS_WRITE = 4,
+    SYS_BRK = 45,
 };
 
 struct syscall_frame {
-    u64 r15;
-    u64 r14;
-    u64 r13;
-    u64 r12;
-    u64 r11;
-    u64 r10;
-    u64 r9;
-    u64 r8;
-    u64 rbp;
-    u64 rdi;
-    u64 rsi;
-    u64 rdx;
-    u64 rcx;
-    u64 rbx;
-    u64 rax;
-    u64 rip;
-    u64 cs;
-    u64 rflags;
-    u64 rsp;
-    u64 ss;
+    u32 edi;
+    u32 esi;
+    u32 ebp;
+    u32 esp;
+    u32 ebx;
+    u32 edx;
+    u32 ecx;
+    u32 eax;
+    u32 eip;
+    u32 cs;
+    u32 eflags;
+    u32 user_esp;
+    u32 ss;
 };
 
 void syscall_dispatch(struct syscall_frame *frame);
